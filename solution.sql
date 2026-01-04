@@ -90,38 +90,48 @@ JOIN car_shop.cars AS ca ON SUBSTR(sales.auto, 1, STRPOS(sales.auto, ',') - 1) =
 ---- Задание 1. Напишите запрос, который выведет процент моделей машин, у которых нет параметра `gasoline_consumption`.
 
 SELECT -- считаем количество с помощью Case и вычисляем долю в процентах
-  (COUNT(DISTINCT CASE WHEN gasoline_consumption IS NULL THEN auto END) / COUNT(DISTINCT auto)) * 100 AS percentage
+  (COUNT(DISTINCT CASE WHEN gasoline_consumption IS NULL THEN auto END) / COUNT(DISTINCT auto)) * 100 AS nulls_percentage_gasoline_consumption
 FROM raw_data.sales;
 
 ---- Задание 2. Напишите запрос, который покажет название бренда и среднюю цену его автомобилей в разбивке по всем годам с учётом скидки.
 SELECT
-	auto,
-	AVG(price * (1 - discount / 100)) AS avg_price_with_discount, -- усредняем цену и скидку, получая цену со скидкой
-	EXTRACT(YEAR FROM date) AS years -- выделяем года и дат
+	SUBSTR(auto, 1, STRPOS(auto, ' ', -1)) as brand_name, -- самое первое слово в столбце auto
+	ROUND(AVG(price * (1 - discount / 100)), 2) AS price_avg, -- усредняем цену и скидку, получая цену со скидкой с округлением до 2 знаков после запятой
+	EXTRACT(YEAR FROM date) AS year -- выделяем года и дат
 FROM raw_data.sales
-GROUP BY auto, EXTRACT(YEAR FROM date); -- делаем группировку по машинам и разбиение по годам
+GROUP BY brand_name, EXTRACT(YEAR FROM date); -- делаем группировку по машинам и разбиение по годам
 
 ---- Задание 3. Посчитайте среднюю цену всех автомобилей с разбивкой по месяцам в 2022 году с учётом скидки.
 
 SELECT
-	EXTRACT (MONTH FROM date) AS months, -- выделяем месяцы аналогично предыдущему примеру
-	AVG(price * (1 - discount / 100)) AS avg_price_with_discount -- аналогичный расчёт средней цены со скидкой
+	EXTRACT (MONTH FROM date) AS month, -- выделяем месяцы аналогично предыдущему примеру
+	EXTRACT (YEAR FROM date) AS year, -- теперь годы
+	ROUND(AVG(price * (1 - discount / 100)), 2) AS price_avg -- аналогичный расчёт средней цены со скидкой
 FROM raw_data.sales
 WHERE date::date BETWEEN '2022-01-01' AND '2022-12-31' -- указываем верхнюю и нижнюю границы дат, предварительно изменив тип данных в столбце date на Date
-GROUP BY EXTRACT (MONTH FROM date); -- разбиваем по месяцам
+GROUP BY EXTRACT (MONTH FROM date), EXTRACT (YEAR FROM date) AS year; -- разбиваем по месяцам
 
 ---- Задание 4. Напишите запрос, который выведет список купленных машин у каждого пользователя.
 
 SELECT
-	person_name,
-	auto
+	person_name as person,
+	STRING_AGG(auto, ', ') AS cars -- соединяем все машины одного владельца в список через запятую
 FROM raw_data.sales
-GROUP BY person_name, auto -- формируем перечень транспортных средств, закреплённых за клиентами
+GROUP BY person -- формируем перечень транспортных средств, закреплённых за клиентами
 ORDER BY person_name; -- для удобства чтения делаем сортировку клиентов по алфавиту
 
----- Задание 5. Напишите запрос, который покажет количество всех пользователей из США.
+---- Задание 5. Напишите запрос, который вернёт самую большую и самую маленькую цену продажи автомобиля с разбивкой по стране без учёта скидки. Цена в колонке price дана с учётом скидки.
 
 SELECT
-	COUNT(DISTINCT person_name) AS clients_from_the_USA -- количество уникальных клиентов из США
+	DISTINCT brand_origin, -- ищем уникальные страны
+	MAX(price) AS price_max, -- ищем наибольшую цену
+	MIN(price) AS price_min -- ищем наименьшую цену
 FROM raw_data.sales
-WHERE brand_origin = 'USA'; -- ставим фильтр по стране - США
+GROUP BY brand_origin -- группируем по странам
+
+---- Задание 6. Напишите запрос, который покажет количество всех пользователей из США.
+
+SELECT
+	COUNT(DISTINCT person_name) AS persons_from_usa_count -- количество уникальных клиентов из США
+FROM raw_data.sales
+WHERE SUBSTR(phone, 1, 2) = '+1' -- фильтр по коду страны в телефоне
