@@ -88,7 +88,7 @@ FROM raw_data.sales rds -- из таблицы сырых данных
 JOIN car_shop.brands b ON SPLIT_PART(s.auto, ' ', 1) = b.brand_name; -- "достаём" ID бренда, соединив таблицы
 
 -- Убрал упоминание бренда, добавил условие Distinct.
-INSERT INTO car_shop.cars (brand_id, model_id, color_id) -- заполняем перечень выпущенных автомобилей с указанием бренда, модели и цвета (их ID)
+INSERT INTO car_shop.cars (model_id, color_id) -- заполняем перечень выпущенных автомобилей с указанием бренда, модели и цвета (их ID)
 SELECT DISTINCT m.model_id, col.color_id -- собираем воедино уникальные комбинации ID бренда и ID модели
 FROM raw_data.sales rds -- из сырых данных
 JOIN car_shop.models m ON SPLIT_PART(rds.auto, ' ', 2) = m.model_name -- из таблицы models забираем ID модели
