@@ -16,13 +16,14 @@ CREATE TABLE IF NOT EXISTS raw_data.sales (
 	brand_origin VARCHAR(20) -- прочую текстовую информацию также будем записывать в формате Varchar
 	);
 
-\copy raw_data.sales FROM 'sales_data.csv' WITH CSV HEADER DELIMITER ','; -- импортируем данные из файла в таблицу sales из схемы raw_data с указанием, что здесь есть заголовки, а также дополнительно прописываем раздлитель - запятую
+\copy raw_data.sales FROM 'sales_data.csv' WITH CSV HEADER DELIMITER ',' NULL AS ''; -- импортируем данные из файла в таблицу sales (с заголовками)
+-- Также здесь прописано, что Null-значения приравниваются к прочерку.
 
 CREATE SCHEMA IF NOT EXISTS car_shop; -- создаём схему с обновлёнными данными
 
+-- Убрал ссылку на ID бренда.
 CREATE TABLE IF NOT EXISTS car_shop.cars ( -- справочник автомобилей (сюда попадают уникальные транспортные средства)
-	car_id SERIAL PRIMARY KEY, -- применяем суррогатный ключ - неуникальное сочетание ID бренда, ID модели и ID цвета (ведь может быть сколько угодно одинаковых машин)
-	brand_id INTEGER REFERENCES car_shop.brands(brand_id), -- ссылка на ID бренда
+	car_id SERIAL PRIMARY KEY, -- применяем суррогатный ключ - неуникальное сочетание ID модели и ID цвета (ведь может быть сколько угодно одинаковых машин)
 	model_id INTEGER REFERENCES car_shop.models(model_id), -- ссылка на ID модели
 	color_id INTEGER REFERENCES car_shop.colors(color_id) -- ссылка на ID цвета
 	);
@@ -33,10 +34,12 @@ CREATE TABLE IF NOT EXISTS car_shop.brands ( -- справочник бренд�
 	origin_country_id INTEGER REFERENCES car_shop.countries(country_id) -- ссылка на ID страны
 	);
 
+-- Добавил столец с расходом топлива без ограничения Not Null.
 CREATE TABLE IF NOT EXISTS car_shop.models ( -- справочник моделей машин с привязкой к бренду (а точнее к ID бренда)
 	model_id SERIAL PRIMARY KEY, -- ID модели (выбираем автоматический)
 	brand_id INTEGER REFERENCES car_shop.brands (brand_id), -- ссылка на ID бренда
-	model_name VARCHAR(50) NOT NULL -- текстовая информация (50 символов достаточно)
+	model_name VARCHAR(50) NOT NULL, -- текстовая информация (50 символов достаточно)
+	gasoline_consumption NUMERIC(5,2) -- расход топлива (есть пропуски, поэтому не ставим ограничение Not Null)
 	);
 
 CREATE TABLE IF NOT EXISTS car_shop.countries ( -- справочник стран-производителей автомобилей
@@ -51,58 +54,58 @@ CREATE TABLE IF NOT EXISTS car_shop.colors ( -- данные о возможны
 
 CREATE TABLE IF NOT EXISTS car_shop.clients ( -- справочник контрагентов
 	client_id SERIAL PRIMARY KEY, -- для ID самым удобным является тип данных Serial, он убирает необходимость вручную проставлять номер
-	first_name VARCHAR(255) NOT NULL, -- текстовая информация (необходимо наличие этих данных)
-	last_name VARCHAR(255) NOT NULL, -- текстовая информация (необходимо наличие этих данных)
-	phone VARCHAR(255) NOT NULL, -- текстовая информация (контакт контрагента обязателен, поэтому ставим органичение Not Null)
+	person_name VARCHAR(255) NOT NULL, -- текстовая информация (необходимо наличие этих данных)
+	phone VARCHAR(255) NOT NULL, -- текстовая информация (контакт контрагента обязателен, поэтому ставим ограничение Not Null)
 	);
 
+-- Убрал ID страны и расход топлива во избежание появления противоречащей информации.
 CREATE TABLE IF NOT EXISTS car_shop.sales ( -- обновлённая таблица продаж
 	deal_id SERIAL PRIMARY KEY, -- первичный ключ - ID сделки
-	car_id INTEGER REFERENCES car_shop.cars(car_id), -- ссылка на ID конкретного автомобиля (информация о бренде, модели и цвете будет в справочнике cars)
+	model_id INTEGER REFERENCES car_shop.models(model_id), -- ссылка на ID конкретного автомобиля (информация о бренде, модели и цвете будет в справочнике cars)
 	price NUMERIC(10,2) NOT NULL, -- цена с заданной точностью (берём в сырых данных)
 	deal_date date NOT NULL DEFAULT current_date, -- дата сделки (там же)
 	client_id INTEGER REFERENCES car_shop.clients(client_id), -- ID клиента
-	discount SMALLINT, -- скидка в процентах, уместен тип Smallint (снова их сырых данных)
-	country_id INTEGER REFERENCES car_shop.countries(country_id), -- ссылка на ID страны
-	gasoline_consumption NUMERIC(5,2) -- расход топлива с заданной точностью (снова их сырых данных)
+	discount SMALLINT -- скидка в процентах, уместен тип Smallint (снова их сырых данных)
 	);
 
+-- изменил порядок заполнения таблиц, чтобы не возникало ошибок при выполнении скрпита
+
 INSERT INTO car_shop.brands (brand_name) -- заполняем справочник брендов
-SELECT DISTINCT SPLIT_PART(auto, ' ', 1) AS brand_name -- первое слово в столбце auto - это название бренда
-FROM raw_data.sales;
-
-INSERT INTO car_shop.models (brand_id, model_name) -- заполняем справочник моделей с привязкой к ID бренда (модель - второе слово в строке из столбца auto)
-SELECT b.brand_id, SPLIT_PART(s.auto, ' ', 2) AS model_name -- ищем сочетания ID бренда и имени модели (ей будет автоматически присвоен свой ID)
-FROM raw_data.sales s -- из таблицы сырых данных
-JOIN car_shop.brands b ON SPLIT_PART(s.auto, ' ', 1) = b.brand_name; -- "достаём" ID бренда, соединив таблицы
-
-
-INSERT INTO car_shop.cars (brand_id, model_id, color_id) -- заполняем перечень выпущенных автомобилей с указанием бренда, модели и цвета (их ID)
-SELECT b.brand_id, m.model_id, col.color_id -- собираем воедино уникальные комбинации ID бренда и ID модели
-FROM raw_data.sales s -- из сырых данных
-JOIN car_shop.brands b ON SPLIT_PART(s.auto, ' ', 1) = b.brand_name -- из таблицы brands забираем ID бренда
-JOIN car_shop.models m ON SPLIT_PART(s.auto, ' ', 2) = m.model_name -- из таблицы models забираем ID модели
-JOIN car_shop.colors col ON SPLIT_PART(s.auto, ' ', -1) = col.color_name -- из таблицы colors забираем ID цвета
-
+SELECT DISTINCT SPLIT_PART(rds.auto, ' ', 1) AS brand_name -- первое слово в столбце auto - это название бренда
+FROM raw_data.sales rds;
 
 INSERT INTO car_shop.colors (color_name) -- заполняем справочник цветов
-SELECT DISTINCT SUBSTR(auto, STRPOS(auto, ',') + 2) AS color_name -- ищем уникальные названия цветов, убирая марки машин до запятой и пробела
-FROM raw_data.sales;
-
-INSERT INTO car_shop.clients (first_name, last_name) -- заполняем справочник контрагентов, разделив имена и фамилии по отдельным полям
-SELECT DISTINCT SPLIT_PART(person_name, ' ', 1) AS first_name, SPLIT_PART(person_name, ' ', -1) AS last_name -- нужны уникальные сочетания имени и фамилии
-FROM raw_data.sales;
+SELECT DISTINCT SUBSTR(rds.auto, STRPOS(rds.auto, ',') + 2) AS color_name -- ищем уникальные названия цветов, убирая марки машин до запятой и пробела
+FROM raw_data.sales rds;
 
 INSERT INTO car_shop.countries (country_name) -- заполняем справочник стран
-SELECT DISTINCT brand_origin -- ищем уникальные страны
+SELECT DISTINCT rds.brand_origin -- ищем уникальные страны
+FROM raw_data.sales rds;
+
+INSERT INTO car_shop.models (brand_id, model_name, gasoline_consumption) -- заполняем справочник моделей с привязкой к ID бренда (модель - второе слово в строке из столбца auto)
+SELECT b.brand_id, SPLIT_PART(rds.auto, ' ', 2) AS model_name, rds.gasoline_consumption -- ищем сочетания ID бренда и имени модели (ей будет автоматически присвоен свой ID)
+FROM raw_data.sales rds -- из таблицы сырых данных
+JOIN car_shop.brands b ON SPLIT_PART(s.auto, ' ', 1) = b.brand_name; -- "достаём" ID бренда, соединив таблицы
+
+-- Убрал упоминание бренда, добавил условие Distinct.
+INSERT INTO car_shop.cars (brand_id, model_id, color_id) -- заполняем перечень выпущенных автомобилей с указанием бренда, модели и цвета (их ID)
+SELECT DISTINCT m.model_id, col.color_id -- собираем воедино уникальные комбинации ID бренда и ID модели
+FROM raw_data.sales rds -- из сырых данных
+JOIN car_shop.models m ON SPLIT_PART(rds.auto, ' ', 2) = m.model_name -- из таблицы models забираем ID модели
+JOIN car_shop.colors col ON SPLIT_PART(rds.auto, ' ', -1) = col.color_name -- из таблицы colors забираем ID цвета
+
+-- Решил оставить справочник клиентов в таком же виде (имена и фамилии разделены)
+INSERT INTO car_shop.clients (first_name, last_name) -- заполняем справочник контрагентов, разделив имена и фамилии по отдельным полям
+SELECT DISTINCT SPLIT_PART(person_name, ' ', 1) AS first_name, SPLIT_PART(person_name, ' ', -1) AS last_name -- нужны уникальные сочетания имени и фамилии 
 FROM raw_data.sales;
 
-INSERT INTO car_shop.sales (car_id, price, deal_date, client_id, discount, country_id, gasoline_consumption) -- заполняем факты продаж
-SELECT c.car_id, rds.price, rds.deal_date, cl.client_id, rds.discount, co.country_id, rds.gasoline_consumption -- проставляем соответствующие значения в нужные столбцы
+-- Здесь изменил джоины. Теперь сущности сравниваются по названиям (именам) вместо их ID.
+-- У справочника клиентов теперь будет два критерия сравнения - имя и фаимилия (поскольку ранее я их разделил)
+INSERT INTO car_shop.sales (model_id, price, deal_date, client_id, discount) -- заполняем факты продаж
+SELECT m.model_id, rds.price, rds.deal_date, cl.client_id, rds.discount -- проставляем соответствующие значения в нужные столбцы
 FROM raw_data.sales rds -- за основу берём таблицу с сырыми данными
-JOIN car_shop.cars c USING (car_id) -- присоединяем справочник автомобилей (нам нужен ID конкретной машины)
-JOIN car_shop.clients cl USING (client_id) -- присоединяем справочник покупателей (ищем ID клиента)
-JOIN car_shop.countries co USING (country_id); -- присоединяем справочник стран (достаём ID страны)
+JOIN car_shop.models m ON SPLIT_PART(rds.auto, ' ', 2) = m.model_name -- получаем ID модели, соединив сырые данные по второму слову в столбце auto с названием модели из таблицы car_shop.models
+JOIN car_shop.clients cl ON SPLIT_PART(rds.person_name, ' ', 1) = cl.first_name AND SPLIT_PART(rds.person_name, ' ', -1) = cl.last_name -- получаем ID клиента, соединив имена из сырых данных со справочником клиентов (имена и фамилии разделены)
 
 -- Этап 2. Создание выборок
 
@@ -143,8 +146,8 @@ ORDER BY person; -- для удобства чтения делаем сорти
 
 SELECT
 	DISTINCT brand_origin, -- ищем уникальные страны
-	MAX(price) AS price_max, -- ищем наибольшую цену
-	MIN(price) AS price_min -- ищем наименьшую цену
+	MAX(price / (1 - discount / 100)) AS price_max, -- ищем наибольшую цену (изменён расчёт цены)
+	 MIN(price / (1 - discount / 100)) AS price_min -- ищем наименьшую цену (изменён расчёт цены)
 FROM car_shop.sales -- из обновлённой таблицы продаж
 GROUP BY brand_origin -- группируем по странам
 
