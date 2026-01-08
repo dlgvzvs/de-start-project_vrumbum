@@ -59,9 +59,10 @@ CREATE TABLE IF NOT EXISTS car_shop.clients ( -- справочник контр
 	);
 
 -- Убрал ID страны и расход топлива во избежание появления противоречащей информации.
+-- Исправил ссылку на ID автомобиля, чтобы не потерять иформацию о цвете проданной машины (название столбца изменил).
 CREATE TABLE IF NOT EXISTS car_shop.sales ( -- обновлённая таблица продаж
 	deal_id SERIAL PRIMARY KEY, -- первичный ключ - ID сделки
-	model_id INTEGER REFERENCES car_shop.models(model_id), -- ссылка на ID конкретного автомобиля (информация о бренде, модели и цвете будет в справочнике cars)
+	car_id INTEGER REFERENCES car_shop.cars(car_id), -- ссылка на ID конкретного автомобиля (информация о бренде, модели и цвете будет в справочнике cars)
 	price NUMERIC(10,2) NOT NULL, -- цена с заданной точностью (берём в сырых данных)
 	deal_date date NOT NULL DEFAULT current_date, -- дата сделки (там же)
 	client_id INTEGER REFERENCES car_shop.clients(client_id), -- ID клиента
@@ -82,8 +83,10 @@ INSERT INTO car_shop.countries (country_name) -- заполняем справо
 SELECT DISTINCT rds.brand_origin -- ищем уникальные страны
 FROM raw_data.sales rds;
 
+-- Исправил на уникальные сочетания бренда, модели и расхода топлива.
+-- Интересно, может ли расход топлива быть неуникальным?
 INSERT INTO car_shop.models (brand_id, model_name, gasoline_consumption) -- заполняем справочник моделей с привязкой к ID бренда (модель - второе слово в строке из столбца auto)
-SELECT b.brand_id, SPLIT_PART(rds.auto, ' ', 2) AS model_name, rds.gasoline_consumption -- ищем сочетания ID бренда и имени модели (ей будет автоматически присвоен свой ID)
+SELECT DISTINCT b.brand_id, SPLIT_PART(rds.auto, ' ', 2) AS model_name, rds.gasoline_consumption -- ищем сочетания ID бренда и имени модели (ей будет автоматически присвоен свой ID)
 FROM raw_data.sales rds -- из таблицы сырых данных
 JOIN car_shop.brands b ON SPLIT_PART(s.auto, ' ', 1) = b.brand_name; -- "достаём" ID бренда, соединив таблицы
 
@@ -99,12 +102,12 @@ INSERT INTO car_shop.clients (first_name, last_name) -- заполняем сп�
 SELECT DISTINCT SPLIT_PART(person_name, ' ', 1) AS first_name, SPLIT_PART(person_name, ' ', -1) AS last_name -- нужны уникальные сочетания имени и фамилии 
 FROM raw_data.sales;
 
--- Здесь изменил джоины. Теперь сущности сравниваются по названиям (именам) вместо их ID.
--- У справочника клиентов теперь будет два критерия сравнения - имя и фаимилия (поскольку ранее я их разделил)
-INSERT INTO car_shop.sales (model_id, price, deal_date, client_id, discount) -- заполняем факты продаж
-SELECT m.model_id, rds.price, rds.deal_date, cl.client_id, rds.discount -- проставляем соответствующие значения в нужные столбцы
+-- Здесь пришлось поправить джоины. Добавилась строчка с присоединением справочника car_shop.cars.
+INSERT INTO car_shop.sales (car_id, price, deal_date, client_id, discount) -- заполняем факты продаж
+SELECT c.car_id, rds.price, rds.deal_date, cl.client_id, rds.discount -- проставляем соответствующие значения в нужные столбцы
 FROM raw_data.sales rds -- за основу берём таблицу с сырыми данными
 JOIN car_shop.models m ON SPLIT_PART(rds.auto, ' ', 2) = m.model_name -- получаем ID модели, соединив сырые данные по второму слову в столбце auto с названием модели из таблицы car_shop.models
+JOIN car_shop.cars c ON m.model_id = c.model_id -- от моделей переходим к машинам, соединив таблицы через ID модели
 JOIN car_shop.clients cl ON SPLIT_PART(rds.person_name, ' ', 1) = cl.first_name AND SPLIT_PART(rds.person_name, ' ', -1) = cl.last_name -- получаем ID клиента, соединив имена из сырых данных со справочником клиентов (имена и фамилии разделены)
 
 -- Этап 2. Создание выборок
