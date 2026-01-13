@@ -94,6 +94,7 @@ FROM raw_data.sales rds -- из сырых данных
 JOIN car_shop.models m ON SPLIT_PART(rds.auto, ' ', 2) = m.model_name -- из таблицы models забираем ID модели
 JOIN car_shop.colors col ON SPLIT_PART(rds.auto, ' ', -1) = col.color_name; -- из таблицы colors забираем ID цвета
 
+-- Привёл схему и скрипт к единому виду (тут ещё добавления телефона не хватало, тоже добавил)
 INSERT INTO car_shop.clients (first_name, last_name, phone) -- заполняем справочник контрагентов, разделив имена и фамилии по отдельным полям
 SELECT DISTINCT SPLIT_PART(person_name, ' ', 1) AS first_name, SPLIT_PART(person_name, ' ', -1) AS last_name, phone -- нужны уникальные сочетания имени, фамилии и телефона
 FROM raw_data.sales;
